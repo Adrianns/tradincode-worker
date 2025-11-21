@@ -1,7 +1,11 @@
 import axios from 'axios';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 
-const BINANCE_API_BASE = 'https://api.binance.com/api/v3';
+// Use Binance US API if USE_BINANCE_US=true, otherwise regular Binance
+const USE_BINANCE_US = process.env.USE_BINANCE_US === 'true';
+const BINANCE_API_BASE = USE_BINANCE_US
+  ? 'https://api.binance.us/api/v3'
+  : 'https://api.binance.com/api/v3';
 const SYMBOL = 'BTCUSDT';
 
 // Proxy configuration (optional - only used if PROXY_URL is set)
@@ -10,6 +14,11 @@ const axiosConfig = PROXY_URL ? {
   httpsAgent: new HttpsProxyAgent(PROXY_URL),
   proxy: false
 } : {};
+
+console.log(`🌍 Using ${USE_BINANCE_US ? 'Binance US' : 'Binance Global'} API`);
+if (PROXY_URL) {
+  console.log(`🔒 Using proxy: ${PROXY_URL.replace(/:[^:]*@/, ':****@')}`);
+}
 
 /**
  * Fetch current Bitcoin price
