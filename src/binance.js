@@ -1,7 +1,15 @@
 import axios from 'axios';
+import { HttpsProxyAgent } from 'https-proxy-agent';
 
 const BINANCE_API_BASE = 'https://api.binance.com/api/v3';
 const SYMBOL = 'BTCUSDT';
+
+// Proxy configuration (optional - only used if PROXY_URL is set)
+const PROXY_URL = process.env.PROXY_URL;
+const axiosConfig = PROXY_URL ? {
+  httpsAgent: new HttpsProxyAgent(PROXY_URL),
+  proxy: false
+} : {};
 
 /**
  * Fetch current Bitcoin price
@@ -9,7 +17,8 @@ const SYMBOL = 'BTCUSDT';
 export async function getCurrentPrice() {
   try {
     const response = await axios.get(`${BINANCE_API_BASE}/ticker/price`, {
-      params: { symbol: SYMBOL }
+      params: { symbol: SYMBOL },
+      ...axiosConfig
     });
     return parseFloat(response.data.price);
   } catch (error) {
@@ -24,7 +33,8 @@ export async function getCurrentPrice() {
 export async function get24hVolume() {
   try {
     const response = await axios.get(`${BINANCE_API_BASE}/ticker/24hr`, {
-      params: { symbol: SYMBOL }
+      params: { symbol: SYMBOL },
+      ...axiosConfig
     });
     return parseFloat(response.data.volume);
   } catch (error) {
@@ -45,7 +55,8 @@ export async function getKlines(interval = '1d', limit = 250) {
         symbol: SYMBOL,
         interval: interval,
         limit: limit
-      }
+      },
+      ...axiosConfig
     });
 
     return response.data.map(kline => ({

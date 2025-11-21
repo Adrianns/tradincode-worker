@@ -7,14 +7,16 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "migrate": "node src/migrate.js"
+    "migrate": "node src/migrate.js",
+    "migrate:paper": "node src/migrate-paper-trading.js"
   },
   "dependencies": {
+    "axios": "^1.6.5",
+    "dotenv": "^16.4.1",
+    "https-proxy-agent": "^7.0.6",
     "node-cron": "^3.0.3",
     "node-telegram-bot-api": "^0.64.0",
-    "pg": "^8.11.3",
-    "axios": "^1.6.5",
-    "dotenv": "^16.4.1"
+    "pg": "^8.11.3"
   },
   "engines": {
     "node": ">=18.0.0"
