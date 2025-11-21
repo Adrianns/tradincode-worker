@@ -60,6 +60,30 @@ export async function sendAlert(alert, score, indicators) {
         message = formatRSIOverboughtAlert(alert, score, indicators, interpretation);
         break;
 
+      case 'OPTIMAL_BUY':
+        message = formatOptimalBuyAlert(alert, score, indicators);
+        break;
+
+      case 'STRONG_BUY_SIGNAL':
+        message = formatStrongBuyAlert(alert, score, indicators);
+        break;
+
+      case 'MAXIMUM_CAUTION':
+        message = formatMaximumCautionAlert(alert, score, indicators);
+        break;
+
+      case 'STRONG_SELL_SIGNAL':
+        message = formatStrongSellAlert(alert, score, indicators);
+        break;
+
+      case 'OPPORTUNITY_EMERGED':
+        message = formatOpportunityEmergedAlert(alert, score, indicators);
+        break;
+
+      case 'WARNING_WEAKNESS':
+        message = formatWarningWeaknessAlert(alert, score, indicators);
+        break;
+
       default:
         message = formatGenericAlert(alert, score, indicators, interpretation);
     }
@@ -173,6 +197,122 @@ ${interpretation.emoji} Score: *${score}/100*
 📉 RSI Weekly: ${indicators.rsiWeekly?.toFixed(2)}
 
 ⚠️ Not recommended to accumulate - wait for correction`;
+}
+
+/**
+ * Format optimal buy alert
+ */
+function formatOptimalBuyAlert(alert, score, indicators) {
+  const signals = alert.details.signals.map(s => `  • ${s}`).join('\n');
+
+  return `🚀 *${alert.message}*
+
+Score: *${score}/100*
+RSI Weekly: ${alert.details.rsi.toFixed(1)}
+
+🎯 SEÑALES ALINEADAS:
+${signals}
+
+💵 BTC Price: $${indicators.price.toLocaleString()}
+📊 MA50: $${indicators.ma50?.toLocaleString()}
+📊 MA200: $${indicators.ma200?.toLocaleString()}
+
+${alert.details.strategy}`;
+}
+
+/**
+ * Format strong buy alert
+ */
+function formatStrongBuyAlert(alert, score, indicators) {
+  const signals = alert.details.signals.map(s => `  • ${s}`).join('\n');
+
+  return `🟢 *${alert.message}*
+
+Score: *${score}/100*
+${alert.details.rsi ? `RSI Weekly: ${alert.details.rsi.toFixed(1)}` : ''}
+
+📊 SEÑALES:
+${signals}
+
+💵 BTC Price: $${indicators.price.toLocaleString()}
+
+${alert.details.strategy}`;
+}
+
+/**
+ * Format maximum caution alert
+ */
+function formatMaximumCautionAlert(alert, score, indicators) {
+  const signals = alert.details.signals.map(s => `  • ${s}`).join('\n');
+
+  return `🔴 *${alert.message}*
+
+Score: *${score}/100*
+RSI Weekly: ${alert.details.rsi.toFixed(1)}
+
+⚠️ SEÑALES DE ALERTA:
+${signals}
+
+💵 BTC Price: $${indicators.price.toLocaleString()}
+📊 MA50: $${indicators.ma50?.toLocaleString()}
+📊 MA200: $${indicators.ma200?.toLocaleString()}
+
+${alert.details.strategy}`;
+}
+
+/**
+ * Format strong sell alert
+ */
+function formatStrongSellAlert(alert, score, indicators) {
+  const signals = alert.details.signals.map(s => `  • ${s}`).join('\n');
+
+  return `🔴 *${alert.message}*
+
+Score: *${score}/100*
+${alert.details.rsi ? `RSI Weekly: ${alert.details.rsi.toFixed(1)}` : ''}
+
+⚠️ SEÑALES:
+${signals}
+
+💵 BTC Price: $${indicators.price.toLocaleString()}
+
+${alert.details.strategy}`;
+}
+
+/**
+ * Format opportunity emerged alert
+ */
+function formatOpportunityEmergedAlert(alert, score, indicators) {
+  const signals = alert.details.signals.map(s => `  • ${s}`).join('\n');
+
+  return `📈 *${alert.message}*
+
+Score: *${alert.details.previousScore}/100* → *${score}/100* (+${alert.details.scoreDiff} points)
+
+🎯 CAMBIO SIGNIFICATIVO:
+${signals}
+
+💵 BTC Price: $${indicators.price.toLocaleString()}
+
+${alert.details.strategy}`;
+}
+
+/**
+ * Format warning weakness alert
+ */
+function formatWarningWeaknessAlert(alert, score, indicators) {
+  const signals = alert.details.signals.map(s => `  • ${s}`).join('\n');
+
+  return `📉 *${alert.message}*
+
+Score: *${alert.details.previousScore}/100* → *${score}/100* (${alert.details.scoreDiff} points)
+
+⚠️ CAMBIO SIGNIFICATIVO:
+${signals}
+
+💵 BTC Price: $${indicators.price.toLocaleString()}
+
+${alert.details.strategy}`;
 }
 
 /**

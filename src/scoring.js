@@ -240,7 +240,182 @@ export function shouldSendAlert(currentScore, previousScore, indicators, previou
     }
   }
 
+  // 4. OPTIMAL OPPORTUNITY DETECTION - Combine multiple signals
+  const optimalOpportunity = detectOptimalOpportunity(currentScore, indicators, previousIndicators);
+  if (optimalOpportunity) {
+    alerts.push(optimalOpportunity);
+  }
+
   return alerts;
+}
+
+/**
+ * Detect optimal buy/sell opportunities based on multiple signal alignment
+ */
+function detectOptimalOpportunity(score, indicators, previousIndicators) {
+  // BEST BUY SIGNAL: Golden Cross + RSI <40 + Score >70
+  const goldenCrossActive = indicators.ma50 > indicators.ma200;
+  const rsiLow = indicators.rsiWeekly !== null && indicators.rsiWeekly < 40;
+  const scoreStrong = score >= 70;
+
+  if (goldenCrossActive && rsiLow && scoreStrong) {
+    return {
+      type: 'OPTIMAL_BUY',
+      severity: 'critical_positive',
+      message: '🚀 MOMENTO ÓPTIMO DE COMPRA',
+      details: {
+        score,
+        rsi: indicators.rsiWeekly,
+        signals: ['Golden Cross activo', `RSI en ${indicators.rsiWeekly.toFixed(1)} (acumulación)`, `Score ${score}/100`],
+        strategy: `
+🎯 ESTRATEGIA RECOMENDADA:
+• Entrada gradual en 3 tramos del 20-30% cada uno
+• Este es uno de los mejores momentos históricos para acumular BTC
+• Combinación de tendencia alcista + zona de sobreventa + score fuerte
+• Probabilidad de éxito: ALTA (señales alineadas)
+
+💡 ACCIÓN:
+Considerá iniciar o aumentar posición. Si no tenés BTC, es momento de entrar.
+        `.trim()
+      }
+    };
+  }
+
+  // STRONG BUY: Score >75 + RSI <30
+  const extremeOversold = indicators.rsiWeekly !== null && indicators.rsiWeekly < 30;
+  const veryStrongScore = score >= 75;
+
+  if (veryStrongScore && extremeOversold) {
+    return {
+      type: 'STRONG_BUY_SIGNAL',
+      severity: 'critical_positive',
+      message: '💎 ZONA DE ACUMULACIÓN FUERTE',
+      details: {
+        score,
+        rsi: indicators.rsiWeekly,
+        signals: [`Score ${score}/100 (muy alto)`, `RSI ${indicators.rsiWeekly.toFixed(1)} (sobreventa extrema)`],
+        strategy: `
+🎯 ESTRATEGIA:
+• BTC está "barato" históricamente
+• Entrada escalonada recomendada (DCA)
+• No metas todo de una, puede bajar más
+• Excelente zona de acumulación a largo plazo
+
+💡 ACCIÓN:
+Momento ideal para comprar gradualmente. Las mejores compras de BTC han sido en RSI <30.
+        `.trim()
+      }
+    };
+  }
+
+  // MAXIMUM CAUTION: Death Cross + RSI >70 + Score <40
+  const deathCrossActive = indicators.ma50 < indicators.ma200;
+  const rsiHigh = indicators.rsiWeekly !== null && indicators.rsiWeekly > 70;
+  const scoreWeak = score < 40;
+
+  if (deathCrossActive && rsiHigh && scoreWeak) {
+    return {
+      type: 'MAXIMUM_CAUTION',
+      severity: 'critical_negative',
+      message: '⚠️ MÁXIMA PRECAUCIÓN - SEÑALES BAJISTAS ALINEADAS',
+      details: {
+        score,
+        rsi: indicators.rsiWeekly,
+        signals: ['Death Cross activo', `RSI en ${indicators.rsiWeekly.toFixed(1)} (sobrecompra)`, `Score ${score}/100 (débil)`],
+        strategy: `
+🎯 ESTRATEGIA:
+• NO compres más - mercado en zona peligrosa
+• Si tenés ganancias del 50%+, considerá tomar profit de 30-50%
+• Si estás en pérdida y es inversión a largo plazo, podés holdear
+• Prepárate para meses de lateralización o caída
+
+⚠️ ACCIÓN:
+Momento de proteger capital, no de agregar posición.
+        `.trim()
+      }
+    };
+  }
+
+  // STRONG SELL: Score <35 + RSI >70
+  const extremeOverbought = indicators.rsiWeekly !== null && indicators.rsiWeekly > 70;
+  const veryWeakScore = score < 35;
+
+  if (veryWeakScore && extremeOverbought) {
+    return {
+      type: 'STRONG_SELL_SIGNAL',
+      severity: 'critical_negative',
+      message: '🔴 SEÑAL DE TOMA DE GANANCIAS',
+      details: {
+        score,
+        rsi: indicators.rsiWeekly,
+        signals: [`Score ${score}/100 (muy bajo)`, `RSI ${indicators.rsiWeekly.toFixed(1)} (sobrecompra)`],
+        strategy: `
+🎯 ESTRATEGIA:
+• BTC está "caro" y hay euforia
+• Considerá tomar profit parcial (30-50% de posición)
+• No vendas todo de golpe
+• Si recién entraste, NO agregues más capital
+
+💡 ACCIÓN:
+Momento de realizar ganancias parcialmente, no de comprar más.
+        `.trim()
+      }
+    };
+  }
+
+  // GOOD BUY OPPORTUNITY: Score jumped >15 points to 70+
+  if (previousIndicators && score >= 70 && (score - previousIndicators.score >= 15)) {
+    const priceVsMA200 = ((indicators.price - indicators.ma200) / indicators.ma200) * 100;
+
+    return {
+      type: 'OPPORTUNITY_EMERGED',
+      severity: 'positive',
+      message: '📈 OPORTUNIDAD DE COMPRA EMERGENTE',
+      details: {
+        score,
+        previousScore: previousIndicators.score,
+        scoreDiff: score - previousIndicators.score,
+        signals: [`Score subió ${(score - previousIndicators.score).toFixed(0)} puntos a ${score}/100`],
+        strategy: `
+🎯 ESTRATEGIA:
+• Múltiples indicadores se alinearon favorablemente
+• Considerá iniciar o aumentar posición gradualmente (DCA)
+• Entrada en 2-3 tramos recomendada
+• Si ya tenés posición, simplemente monitoreá
+
+💡 ACCIÓN:
+Señal de fortalecimiento del mercado. ${priceVsMA200 < -10 ? 'Además, precio está ' + Math.abs(priceVsMA200).toFixed(1) + '% debajo de MA200 (buen soporte)' : 'Monitoreá confirmación'}
+        `.trim()
+      }
+    };
+  }
+
+  // WARNING: Score dropped >15 points to <40
+  if (previousIndicators && score < 40 && (previousIndicators.score - score >= 15)) {
+    return {
+      type: 'WARNING_WEAKNESS',
+      severity: 'negative',
+      message: '⚠️ DEBILITAMIENTO DEL MERCADO',
+      details: {
+        score,
+        previousScore: previousIndicators.score,
+        scoreDiff: previousIndicators.score - score,
+        signals: [`Score cayó ${(previousIndicators.score - score).toFixed(0)} puntos a ${score}/100`],
+        strategy: `
+🎯 ESTRATEGIA:
+• Algo cambió en el mercado - precaución
+• Si tenés buen profit, considerá tomar ganancias parciales
+• NO es pánico, es ajuste estratégico
+• Si es inversión a largo plazo, podés holdear pero monitoreá
+
+⚠️ ACCIÓN:
+Reducí exposición o asegurá ganancias si las tenés. No es momento de agregar posición.
+        `.trim()
+      }
+    };
+  }
+
+  return null;
 }
 
 /**
