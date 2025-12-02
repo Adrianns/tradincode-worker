@@ -118,7 +118,7 @@ async function runAnalysis() {
     }
 
     // 7. Execute Paper Trading logic
-    const paperTradingResult = await executePaperTrading(score, indicators);
+    const paperTradingResult = await executePaperTrading(score, indicators, marketData);
 
     if (paperTradingResult) {
       const config = await getPaperConfig();
