@@ -53,20 +53,44 @@ export async function updatePaperConfig(updates) {
  * Execute a buy trade
  */
 export async function executeBuyTrade(data) {
-  const { btcPrice, btcAmount, usdAmount, balanceUsd, balanceBtc, score, reason } = data;
+  const {
+    btcPrice,
+    btcAmount,
+    usdAmount,
+    balanceUsd,
+    balanceBtc,
+    score,
+    reason,
+    stopLossPrice,
+    takeProfitPrice,
+    entryAtr
+  } = data;
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
-    // Insert trade
+    // Insert trade with optional SL/TP columns
     const tradeResult = await client.query(`
       INSERT INTO paper_trades (
         trade_type, btc_price, btc_amount, usd_amount,
-        balance_usd, balance_btc, score_at_trade, reason
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        balance_usd, balance_btc, score_at_trade, reason,
+        stop_loss_price, take_profit_price, entry_atr
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
       RETURNING *
-    `, ['buy', btcPrice, btcAmount, usdAmount, balanceUsd, balanceBtc, score, reason]);
+    `, [
+      'buy',
+      btcPrice,
+      btcAmount,
+      usdAmount,
+      balanceUsd,
+      balanceBtc,
+      score,
+      reason,
+      stopLossPrice || null,
+      takeProfitPrice || null,
+      entryAtr || null
+    ]);
 
     // Update config balances
     await client.query(`
@@ -213,6 +237,31 @@ export async function getAveragePurchasePrice() {
 }
 
 /**
+ * Get active position (latest buy since last sell) with SL/TP
+ */
+export async function getActivePosition() {
+  const client = await pool.connect();
+  try {
+    const result = await client.query(`
+      SELECT *
+      FROM paper_trades
+      WHERE trade_type = 'buy'
+        AND created_at > (
+          SELECT COALESCE(MAX(created_at), '1970-01-01')
+          FROM paper_trades
+          WHERE trade_type = 'sell'
+        )
+      ORDER BY created_at DESC
+      LIMIT 1
+    `);
+
+    return result.rows[0] || null;
+  } finally {
+    client.release();
+  }
+}
+
+/**
  * Get trading metrics
  */
 export async function getTradingMetrics() {
@@ -293,6 +342,7 @@ export default {
   getPaperTrades,
   getTradesByType,
   getAveragePurchasePrice,
+  getActivePosition,
   getTradingMetrics,
   resetPaperTrading,
   startPaperTrading,

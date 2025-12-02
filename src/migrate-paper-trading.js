@@ -70,6 +70,20 @@ async function migratePaperTrading() {
     `);
     console.log('✓ Created indexes');
 
+    // Add ATR-based Stop Loss / Take Profit columns (migration for existing tables)
+    try {
+      await client.query(`
+        ALTER TABLE paper_trades
+        ADD COLUMN IF NOT EXISTS stop_loss_price DECIMAL(20, 8),
+        ADD COLUMN IF NOT EXISTS take_profit_price DECIMAL(20, 8),
+        ADD COLUMN IF NOT EXISTS entry_atr DECIMAL(20, 8)
+      `);
+      console.log('✓ Added stop_loss_price, take_profit_price, entry_atr columns');
+    } catch (alterError) {
+      // Columns might already exist
+      console.log('Note: SL/TP columns may already exist or could not be added');
+    }
+
     // Insert default config if none exists
     const configCheck = await client.query('SELECT COUNT(*) FROM paper_config');
     if (parseInt(configCheck.rows[0].count) === 0) {

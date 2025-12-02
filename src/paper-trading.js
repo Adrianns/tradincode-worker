@@ -2,7 +2,8 @@ import {
   getPaperConfig,
   executeBuyTrade,
   executeSellTrade,
-  getAveragePurchasePrice
+  getAveragePurchasePrice,
+  getActivePosition
 } from './paper-trading-db.js';
 import { calculateEMA } from './indicators.js';
 
@@ -12,10 +13,19 @@ import { calculateEMA } from './indicators.js';
  * Conservative spot trading strategy combining EMA 200 + SuperTrend
  *
  * Entry: Price > EMA 200 AND SuperTrend turns GREEN
- * Exit: SuperTrend turns RED (regardless of EMA)
+ * Exit: SuperTrend turns RED OR Stop Loss ATR OR Take Profit ATR
+ *
+ * Risk Management (ATR-based):
+ * - Stop Loss = Entry Price - (ATR14 × 1.5)
+ * - Take Profit = Entry Price + (ATR14 × 1.5 × 1.5) [Risk:Reward 1:1.5]
  *
  * Timeframe: Daily (1D)
  */
+
+// Risk management constants
+const ATR_PERIOD_RISK = 14;      // ATR period for Stop Loss calculation
+const ATR_MULTIPLIER = 1.5;      // Multiplier for Stop Loss distance
+const RISK_REWARD_RATIO = 1.5;   // Take Profit = SL distance × 1.5
 
 /**
  * Calculate Average True Range (ATR)
@@ -159,7 +169,10 @@ function calculateTrendShieldIndicators(marketData) {
   const ema200 = calculateEMA(closePrices, 200);
   const superTrendData = calculateSuperTrend(dailyKlines, 10, 3);
 
-  if (!ema200 || !superTrendData) {
+  // Calculate ATR(14) for risk management (Stop Loss / Take Profit)
+  const atr14 = calculateATR(dailyKlines, ATR_PERIOD_RISK);
+
+  if (!ema200 || !superTrendData || !atr14) {
     console.warn('   Could not calculate Trend Shield indicators');
     return null;
   }
@@ -187,7 +200,8 @@ function calculateTrendShieldIndicators(marketData) {
       justTurnedGreen: superTrendTurnedGreen,
       justTurnedRed: superTrendTurnedRed,
       atr: stCurrent.atr
-    }
+    },
+    atr14  // ATR(14) for Stop Loss / Take Profit calculation
   };
 }
 
@@ -242,17 +256,33 @@ function shouldBuy(config, indicators) {
     };
   }
 
+  // Calculate ATR-based Stop Loss and Take Profit
+  const entryPrice = indicators.price;
+  const atr14 = indicators.atr14;
+  const slDistance = atr14 * ATR_MULTIPLIER;
+  const stopLossPrice = entryPrice - slDistance;
+  const takeProfitPrice = entryPrice + (slDistance * RISK_REWARD_RATIO);
+
+  reasons.push(`SL: $${stopLossPrice.toFixed(0)} | TP: $${takeProfitPrice.toFixed(0)}`);
+
   return {
     should: true,
     reasons,
-    usdToInvest
+    usdToInvest,
+    stopLossPrice,
+    takeProfitPrice,
+    entryAtr: atr14
   };
 }
 
 /**
  * Evaluate SELL signal for Trend Shield strategy
+ * Exit conditions (first one that triggers):
+ * 1. SuperTrend turns RED (technical signal)
+ * 2. Price hits Stop Loss (ATR-based risk management)
+ * 3. Price hits Take Profit (ATR-based profit target)
  */
-async function shouldSell(config, indicators) {
+async function shouldSell(config, indicators, activePosition = null) {
   const reasons = [];
 
   if (!config.is_active) {
@@ -272,7 +302,20 @@ async function shouldSell(config, indicators) {
   const currentPrice = indicators.price;
   const profitLossPercent = ((currentPrice - avgPurchasePrice) / avgPurchasePrice) * 100;
 
-  // EXIT CONDITION: SuperTrend turns RED
+  // Get SL/TP from active position or calculate dynamically
+  let stopLossPrice, takeProfitPrice;
+
+  if (activePosition && activePosition.stop_loss_price && activePosition.take_profit_price) {
+    stopLossPrice = parseFloat(activePosition.stop_loss_price);
+    takeProfitPrice = parseFloat(activePosition.take_profit_price);
+  } else {
+    // Fallback: Calculate from current ATR (less accurate but works)
+    const slDistance = indicators.atr14 * ATR_MULTIPLIER;
+    stopLossPrice = avgPurchasePrice - slDistance;
+    takeProfitPrice = avgPurchasePrice + (slDistance * RISK_REWARD_RATIO);
+  }
+
+  // EXIT CONDITION 1: SuperTrend turns RED (technical signal)
   if (indicators.superTrend.justTurnedRed) {
     reasons.push('SuperTrend changed GREEN to RED - Sell signal!');
     reasons.push(`Protecting capital at ${profitLossPercent >= 0 ? '+' : ''}${profitLossPercent.toFixed(2)}%`);
@@ -286,20 +329,37 @@ async function shouldSell(config, indicators) {
     };
   }
 
-  // Additional safety: Stop loss
-  if (profitLossPercent <= -config.stop_loss_percentage) {
-    reasons.push(`Stop loss triggered: ${profitLossPercent.toFixed(2)}% (limit: -${config.stop_loss_percentage}%)`);
+  // EXIT CONDITION 2: Stop Loss ATR (price <= stopLossPrice)
+  if (currentPrice <= stopLossPrice) {
+    reasons.push(`ATR Stop Loss hit: $${currentPrice.toFixed(0)} <= SL $${stopLossPrice.toFixed(0)}`);
+    reasons.push(`Loss: ${profitLossPercent.toFixed(2)}%`);
+
     return {
       should: true,
       reasons,
       profitLossPercent,
       avgPurchasePrice,
-      triggerType: 'stop_loss'
+      triggerType: 'stop_loss_atr'
     };
   }
 
+  // EXIT CONDITION 3: Take Profit ATR (price >= takeProfitPrice)
+  if (currentPrice >= takeProfitPrice) {
+    reasons.push(`ATR Take Profit hit: $${currentPrice.toFixed(0)} >= TP $${takeProfitPrice.toFixed(0)}`);
+    reasons.push(`Profit: +${profitLossPercent.toFixed(2)}%`);
+
+    return {
+      should: true,
+      reasons,
+      profitLossPercent,
+      avgPurchasePrice,
+      triggerType: 'take_profit_atr'
+    };
+  }
+
+  // HOLD position
   const holdReason = indicators.superTrend.isGreen
-    ? `SuperTrend GREEN - Holding. P/L: ${profitLossPercent >= 0 ? '+' : ''}${profitLossPercent.toFixed(2)}%`
+    ? `SuperTrend GREEN - Holding. P/L: ${profitLossPercent >= 0 ? '+' : ''}${profitLossPercent.toFixed(2)}% | SL: $${stopLossPrice.toFixed(0)} | TP: $${takeProfitPrice.toFixed(0)}`
     : `Waiting for signal. P/L: ${profitLossPercent >= 0 ? '+' : ''}${profitLossPercent.toFixed(2)}%`;
 
   return {
@@ -329,7 +389,7 @@ export async function executePaperTrading(score, indicators, marketData) {
     }
 
     console.log('\n   Evaluating Trend Shield signals...');
-    console.log(`   Strategy: EMA 200 + SuperTrend`);
+    console.log(`   Strategy: EMA 200 + SuperTrend + ATR Risk Management`);
     console.log(`   Balance: $${parseFloat(config.balance_usd).toLocaleString()} USD + ${parseFloat(config.balance_btc).toFixed(8)} BTC`);
 
     if (!marketData) {
@@ -347,9 +407,13 @@ export async function executePaperTrading(score, indicators, marketData) {
 
     console.log(`   EMA 200: $${trendIndicators.ema200.toFixed(0)} | Price: $${currentPrice.toFixed(0)} (${trendIndicators.priceDistanceFromEMA.toFixed(2)}%)`);
     console.log(`   SuperTrend: ${trendIndicators.superTrend.isGreen ? 'GREEN' : 'RED'} (value: $${trendIndicators.superTrend.value.toFixed(0)})`);
+    console.log(`   ATR(14): $${trendIndicators.atr14.toFixed(2)}`);
+
+    // Get active position for SL/TP checking
+    const activePosition = await getActivePosition();
 
     // Check for SELL signal first
-    const sellSignal = await shouldSell(config, trendIndicators);
+    const sellSignal = await shouldSell(config, trendIndicators, activePosition);
 
     if (sellSignal.should) {
       console.log('   SELL SIGNAL DETECTED');
@@ -387,7 +451,8 @@ export async function executePaperTrading(score, indicators, marketData) {
         action: 'sell',
         trade,
         profitLossPercentage,
-        profitLossUsd
+        profitLossUsd,
+        triggerType: sellSignal.triggerType
       };
     }
 
@@ -397,6 +462,7 @@ export async function executePaperTrading(score, indicators, marketData) {
     if (buySignal.should) {
       console.log('   BUY SIGNAL DETECTED');
       console.log(`   Reasons: ${buySignal.reasons.join(', ')}`);
+      console.log(`   Stop Loss: $${buySignal.stopLossPrice.toFixed(0)} | Take Profit: $${buySignal.takeProfitPrice.toFixed(0)}`);
 
       const usdToInvest = buySignal.usdToInvest;
       const btcToBuy = usdToInvest / currentPrice;
@@ -410,7 +476,10 @@ export async function executePaperTrading(score, indicators, marketData) {
         balanceUsd: newBalanceUsd,
         balanceBtc: newBalanceBtc,
         score: 0,
-        reason: `[TREND_SHIELD] ${buySignal.reasons.join(' | ')}`
+        reason: `[TREND_SHIELD] ${buySignal.reasons.join(' | ')}`,
+        stopLossPrice: buySignal.stopLossPrice,
+        takeProfitPrice: buySignal.takeProfitPrice,
+        entryAtr: buySignal.entryAtr
       };
 
       const trade = await executeBuyTrade(tradeData);
@@ -421,7 +490,9 @@ export async function executePaperTrading(score, indicators, marketData) {
 
       return {
         action: 'buy',
-        trade
+        trade,
+        stopLossPrice: buySignal.stopLossPrice,
+        takeProfitPrice: buySignal.takeProfitPrice
       };
     }
 
@@ -434,6 +505,11 @@ export async function executePaperTrading(score, indicators, marketData) {
         const profitLoss = ((currentPrice - avgPrice) / avgPrice) * 100;
         console.log(`   Position: ${parseFloat(config.balance_btc).toFixed(8)} BTC ($${currentValue.toLocaleString()})`);
         console.log(`   Unrealized P/L: ${profitLoss > 0 ? '+' : ''}${profitLoss.toFixed(2)}%`);
+
+        // Show SL/TP levels if we have an active position
+        if (activePosition && activePosition.stop_loss_price && activePosition.take_profit_price) {
+          console.log(`   SL: $${parseFloat(activePosition.stop_loss_price).toFixed(0)} | TP: $${parseFloat(activePosition.take_profit_price).toFixed(0)}`);
+        }
       }
     }
 
