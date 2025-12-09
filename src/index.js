@@ -15,6 +15,7 @@ import { executeMultiAccountTrading } from './multi-account-trading.js';
 import { getPaperConfig, savePaperSignal } from './paper-trading-db.js';
 import { calculateAllSignals } from './indicators/index.js';
 import { calculateRankings, checkRankingAlerts } from './ranking-system.js';
+import { startAPIServer } from './api/server.js';
 
 dotenv.config();
 
@@ -296,6 +297,10 @@ async function main() {
   console.log('Initializing Telegram bot...');
   initTelegramBot();
   console.log('✓ Telegram bot ready\n');
+
+  // Start API Server
+  console.log('Starting API server...');
+  startAPIServer();
 
   // Send test message
   if (process.env.SEND_TEST_MESSAGE === 'true') {
