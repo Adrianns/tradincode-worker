@@ -357,7 +357,7 @@ export async function sendTestMessage() {
 /**
  * Send paper trading BUY notification
  */
-export async function sendPaperTradingBuy(trade, config, indicators) {
+export async function sendPaperTradingBuy(trade, account, indicators, accountName = null) {
   const chatId = process.env.TELEGRAM_CHAT_ID;
 
   if (!bot || !chatId) {
@@ -366,26 +366,30 @@ export async function sendPaperTradingBuy(trade, config, indicators) {
   }
 
   try {
-    const percentageInvested = config.percentage_per_trade;
     const btcAmount = parseFloat(trade.btc_amount);
     const usdAmount = parseFloat(trade.usd_amount);
     const btcPrice = parseFloat(trade.btc_price);
     const balanceUsd = parseFloat(trade.balance_usd);
     const balanceBtc = parseFloat(trade.balance_btc);
-    const score = trade.score_at_trade;
+    const positionSizePercent = account.position_size_percent || 0.95;
+
+    const accountLabel = accountName || account.account_name || 'Default Account';
+    const strategyLabel = account.strategy || 'Unknown';
 
     const message = `📊 *PAPER TRADING - COMPRA*
 
-💵 Invertido: $${usdAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${percentageInvested}% del balance)
+🏦 Cuenta: *${accountLabel}*
+📈 Estrategia: ${strategyLabel}
+
+💵 Invertido: $${usdAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${(positionSizePercent * 100).toFixed(0)}% del balance)
 ₿ BTC comprado: ${btcAmount.toFixed(8)} a $${btcPrice.toLocaleString()}
-📈 Score: ${score}/100
 
 💰 Balance: $${balanceUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD + ${balanceBtc.toFixed(8)} BTC
 
 📝 Razón: ${trade.reason}`;
 
     await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
-    console.log('✅ Paper Trading BUY alert sent to Telegram');
+    console.log(`✅ Paper Trading BUY alert sent to Telegram for ${accountLabel}`);
     return true;
   } catch (error) {
     console.error('Error sending Paper Trading BUY alert:', error.message);
@@ -396,7 +400,7 @@ export async function sendPaperTradingBuy(trade, config, indicators) {
 /**
  * Send paper trading SELL notification
  */
-export async function sendPaperTradingSell(trade, profitLossUsd, profitLossPercentage) {
+export async function sendPaperTradingSell(trade, profitLossUsd, profitLossPercentage, accountName = null) {
   const chatId = process.env.TELEGRAM_CHAT_ID;
 
   if (!bot || !chatId) {
@@ -409,16 +413,18 @@ export async function sendPaperTradingSell(trade, profitLossUsd, profitLossPerce
     const usdAmount = parseFloat(trade.usd_amount);
     const btcPrice = parseFloat(trade.btc_price);
     const balanceUsd = parseFloat(trade.balance_usd);
-    const score = trade.score_at_trade;
 
     const profitEmoji = profitLossUsd > 0 ? '🟢' : '🔴';
     const profitSign = profitLossUsd > 0 ? '+' : '';
 
+    const accountLabel = accountName || 'Default Account';
+
     const message = `📊 *PAPER TRADING - VENTA*
+
+🏦 Cuenta: *${accountLabel}*
 
 ₿ BTC vendido: ${btcAmount.toFixed(8)} a $${btcPrice.toLocaleString()}
 💵 Recibido: $${usdAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-📉 Score: ${score}/100
 
 💰 Balance: $${balanceUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
 
@@ -427,7 +433,7 @@ ${profitEmoji} P&L: ${profitSign}${profitLossPercentage.toFixed(2)}% (${profitSi
 📝 Razón: ${trade.reason}`;
 
     await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
-    console.log('✅ Paper Trading SELL alert sent to Telegram');
+    console.log(`✅ Paper Trading SELL alert sent to Telegram for ${accountLabel}`);
     return true;
   } catch (error) {
     console.error('Error sending Paper Trading SELL alert:', error.message);

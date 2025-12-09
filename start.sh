@@ -13,5 +13,9 @@ echo "Running indicator signals migrations..."
 npm run migrate:indicators
 echo "✓ Indicator signals migrations completed"
 
+echo "Running multi-account migrations..."
+npm run migrate:accounts
+echo "✓ Multi-account migrations completed"
+
 echo "Starting worker..."
 npm start

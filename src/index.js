@@ -11,9 +11,10 @@ import {
   getLatestAnalysis,
   saveKlineData
 } from './database.js';
-import { executePaperTrading } from './paper-trading.js';
+import { executeMultiAccountTrading } from './multi-account-trading.js';
 import { getPaperConfig, savePaperSignal } from './paper-trading-db.js';
 import { calculateAllSignals } from './indicators/index.js';
+import { calculateRankings, checkRankingAlerts } from './ranking-system.js';
 
 dotenv.config();
 
@@ -118,25 +119,10 @@ async function runAnalysis() {
       console.log('✓ No alerts triggered - conditions stable');
     }
 
-    // 7. Execute Paper Trading logic
-    const paperTradingResult = await executePaperTrading(score, indicators, marketData);
-
-    if (paperTradingResult) {
-      const config = await getPaperConfig();
-
-      if (paperTradingResult.action === 'buy') {
-        await sendPaperTradingBuy(paperTradingResult.trade, config, indicators);
-      } else if (paperTradingResult.action === 'sell') {
-        await sendPaperTradingSell(
-          paperTradingResult.trade,
-          paperTradingResult.profitLossUsd,
-          paperTradingResult.profitLossPercentage
-        );
-      }
-    }
-
-    // 8. Calculate all indicator signals
+    // 7. Calculate all indicator signals (needed for multi-account trading)
     console.log('\n📊 Calculating all indicator signals...');
+    let allSignals = null;
+
     try {
       const candles = marketData.dailyKlines.map(k => ({
         timestamp: k.openTime,
@@ -147,7 +133,7 @@ async function runAnalysis() {
         volume: k.volume
       }));
 
-      const allSignals = await calculateAllSignals(candles, {
+      allSignals = await calculateAllSignals(candles, {
         useHeikinAshi: true,
         useTLSignals: true,
         useKoncorde: true,
@@ -158,44 +144,113 @@ async function runAnalysis() {
       });
 
       console.log('✓ All indicator signals calculated');
-      console.log('\nSignals summary:');
-
-      // Save each indicator signal to database
-      const timestamp = Date.now();
-      const symbol = 'BTCUSDT';
-      const price = marketData.currentPrice;
-
-      const indicatorNames = [
-        { key: 'heikinAshi', name: 'Heikin Ashi' },
-        { key: 'tlSignals', name: 'TL Signals' },
-        { key: 'koncorde', name: 'Koncorde' },
-        { key: 'lupown', name: 'Lupown' },
-        { key: 'whales', name: 'Whale Detector' },
-        { key: 'divergences', name: 'Divergences' },
-        { key: 'orderBlocks', name: 'Order Blocks' }
-      ];
-
-      for (const { key, name } of indicatorNames) {
-        const signalData = allSignals[key];
-
-        if (signalData) {
-          const signal = signalData.signal || null;
-          console.log(`  - ${name}: ${signal || 'NONE'}`);
-
-          await savePaperSignal({
-            timestamp,
-            symbol,
-            indicator: name,
-            signal,
-            price,
-            metadata: signalData
-          });
-        }
-      }
-
-      console.log('✓ Signals saved to database');
     } catch (error) {
-      console.error('✗ Error calculating/saving indicator signals:', error);
+      console.error('✗ Error calculating indicator signals:', error);
+    }
+
+    // 8. Execute Multi-Account Paper Trading
+    if (allSignals) {
+      try {
+        const tradingResults = await executeMultiAccountTrading(marketData);
+
+        // Send notifications for each account that traded
+        for (const result of tradingResults) {
+          if (result.error) {
+            console.error(`  ✗ Error in account ${result.account.account_name}:`, result.error);
+            continue;
+          }
+
+          if (result.action === 'buy') {
+            await sendPaperTradingBuy(
+              result.trade,
+              result.account,
+              indicators,
+              result.account.account_name
+            );
+          } else if (result.action === 'sell') {
+            await sendPaperTradingSell(
+              result.trade,
+              result.trade.profit_loss_usd,
+              result.trade.profit_loss_percentage,
+              result.account.account_name
+            );
+          }
+        }
+
+        // 9. Calculate rankings and check for alerts
+        console.log('\n📊 Calculating rankings...');
+        const rankings = await calculateRankings(marketData.currentPrice);
+        console.log(`✓ Rankings calculated (${rankings.length} accounts)`);
+
+        if (rankings.length > 0) {
+          console.log('\nTop 3 strategies:');
+          rankings.slice(0, 3).forEach(r => {
+            console.log(`  ${r.rank}. ${r.account_name} (${r.strategy}): ${r.roi_percent.toFixed(2)}% ROI`);
+          });
+
+          // Check for ranking alerts
+          const rankingAlerts = await checkRankingAlerts(rankings);
+
+          if (rankingAlerts.length > 0) {
+            console.log(`\n🔔 ${rankingAlerts.length} ranking alert(s) detected`);
+
+            for (const alert of rankingAlerts) {
+              console.log(`  - ${alert.message}`);
+              await sendAlert({
+                type: alert.type,
+                severity: 'info',
+                message: alert.message,
+                details: {}
+              }, score, indicators);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('✗ Error in multi-account trading:', error);
+      }
+    }
+
+    // 10. Save indicator signals to database
+    if (allSignals) {
+      console.log('\n💾 Saving indicator signals to database...');
+      try {
+        const timestamp = Date.now();
+        const symbol = 'BTCUSDT';
+        const price = marketData.currentPrice;
+
+        const indicatorNames = [
+          { key: 'heikinAshi', name: 'Heikin Ashi' },
+          { key: 'tlSignals', name: 'TL Signals' },
+          { key: 'koncorde', name: 'Koncorde' },
+          { key: 'lupown', name: 'Lupown' },
+          { key: 'whales', name: 'Whale Detector' },
+          { key: 'divergences', name: 'Divergences' },
+          { key: 'orderBlocks', name: 'Order Blocks' }
+        ];
+
+        console.log('\nSignals summary:');
+        for (const { key, name } of indicatorNames) {
+          const signalData = allSignals[key];
+
+          if (signalData) {
+            const signal = signalData.signal || null;
+            console.log(`  - ${name}: ${signal || 'NONE'}`);
+
+            await savePaperSignal({
+              timestamp,
+              symbol,
+              indicator: name,
+              signal,
+              price,
+              metadata: signalData
+            });
+          }
+        }
+
+        console.log('✓ Signals saved to database');
+      } catch (error) {
+        console.error('✗ Error saving indicator signals:', error);
+      }
     }
 
     console.log('\n========================================');
