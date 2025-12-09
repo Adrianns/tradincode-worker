@@ -9,5 +9,9 @@ echo "Running paper trading migrations..."
 npm run migrate:paper
 echo "✓ Paper trading migrations completed"
 
+echo "Running indicator signals migrations..."
+npm run migrate:indicators
+echo "✓ Indicator signals migrations completed"
+
 echo "Starting worker..."
 npm start

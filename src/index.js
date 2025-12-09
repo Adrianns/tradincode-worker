@@ -12,7 +12,8 @@ import {
   saveKlineData
 } from './database.js';
 import { executePaperTrading } from './paper-trading.js';
-import { getPaperConfig } from './paper-trading-db.js';
+import { getPaperConfig, savePaperSignal } from './paper-trading-db.js';
+import { calculateAllSignals } from './indicators/index.js';
 
 dotenv.config();
 
@@ -132,6 +133,69 @@ async function runAnalysis() {
           paperTradingResult.profitLossPercentage
         );
       }
+    }
+
+    // 8. Calculate all indicator signals
+    console.log('\n📊 Calculating all indicator signals...');
+    try {
+      const candles = marketData.dailyKlines.map(k => ({
+        timestamp: k.openTime,
+        open: k.open,
+        high: k.high,
+        low: k.low,
+        close: k.close,
+        volume: k.volume
+      }));
+
+      const allSignals = await calculateAllSignals(candles, {
+        useHeikinAshi: true,
+        useTLSignals: true,
+        useKoncorde: true,
+        useLupown: true,
+        useWhaleDetector: true,
+        useDivergences: true,
+        useOrderBlocks: true
+      });
+
+      console.log('✓ All indicator signals calculated');
+      console.log('\nSignals summary:');
+
+      // Save each indicator signal to database
+      const timestamp = Date.now();
+      const symbol = 'BTCUSDT';
+      const price = marketData.currentPrice;
+
+      const indicatorNames = [
+        { key: 'heikinAshi', name: 'Heikin Ashi' },
+        { key: 'tlSignals', name: 'TL Signals' },
+        { key: 'koncorde', name: 'Koncorde' },
+        { key: 'lupown', name: 'Lupown' },
+        { key: 'whales', name: 'Whale Detector' },
+        { key: 'divergences', name: 'Divergences' },
+        { key: 'orderBlocks', name: 'Order Blocks' }
+      ];
+
+      for (const { key, name } of indicatorNames) {
+        const signalData = allSignals[key];
+
+        if (signalData) {
+          const signal = signalData.signal || null;
+          console.log(`  - ${name}: ${signal || 'NONE'}`);
+
+          await savePaperSignal({
+            timestamp,
+            symbol,
+            indicator: name,
+            signal,
+            price,
+            metadata: signalData
+          });
+        }
+      }
+
+      console.log('✓ Signals saved to database');
+    } catch (error) {
+      console.error('✗ Error calculating/saving indicator signals:', error);
     }
 
     console.log('\n========================================');

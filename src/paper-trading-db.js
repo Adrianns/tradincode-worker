@@ -334,6 +334,34 @@ export async function stopPaperTrading() {
   });
 }
 
+/**
+ * Save indicator signal to database
+ */
+export async function savePaperSignal(data) {
+  const { timestamp, symbol, indicator, signal, price, metadata } = data;
+
+  const client = await pool.connect();
+  try {
+    const result = await client.query(`
+      INSERT INTO paper_signals (
+        timestamp, symbol, indicator, signal, price, metadata
+      ) VALUES ($1, $2, $3, $4, $5, $6)
+      RETURNING *
+    `, [
+      timestamp,
+      symbol,
+      indicator,
+      signal || null,
+      price,
+      metadata ? JSON.stringify(metadata) : null
+    ]);
+
+    return result.rows[0];
+  } finally {
+    client.release();
+  }
+}
+
 export default {
   getPaperConfig,
   updatePaperConfig,
@@ -346,5 +374,6 @@ export default {
   getTradingMetrics,
   resetPaperTrading,
   startPaperTrading,
-  stopPaperTrading
+  stopPaperTrading,
+  savePaperSignal
 };

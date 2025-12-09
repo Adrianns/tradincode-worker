@@ -85,7 +85,7 @@ export async function getKlines(interval = '1d', limit = 250) {
 /**
  * Fetch daily klines for MA calculation
  */
-export async function getDailyKlines(limit = 250) {
+export async function getDailyKlines(limit = 500) {
   return getKlines('1d', limit);
 }
 
@@ -104,7 +104,7 @@ export async function getMarketData() {
     const [price, volume, dailyKlines, weeklyKlines] = await Promise.all([
       getCurrentPrice(),
       get24hVolume(),
-      getDailyKlines(250),
+      getDailyKlines(500),
       getWeeklyKlines(52)
     ]);
 
