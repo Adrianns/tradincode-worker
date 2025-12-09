@@ -67,7 +67,8 @@ export async function createAccount(data) {
     trailing_stop = false,
     trailing_stop_percent = null,
     position_size_percent = 0.95,
-    required_convergence = 2
+    required_convergence = 2,
+    timeframe = '1d'
   } = data;
 
   const client = await pool.connect();
@@ -76,8 +77,9 @@ export async function createAccount(data) {
       INSERT INTO trading_accounts (
         account_name, strategy, initial_balance, balance_usd, is_active,
         stop_loss_percent, take_profit_percent, trailing_stop,
-        trailing_stop_percent, position_size_percent, required_convergence
-      ) VALUES ($1, $2, $3, $3, $4, $5, $6, $7, $8, $9, $10)
+        trailing_stop_percent, position_size_percent, required_convergence,
+        timeframe
+      ) VALUES ($1, $2, $3, $3, $4, $5, $6, $7, $8, $9, $10, $11)
       RETURNING *
     `, [
       account_name,
@@ -89,7 +91,8 @@ export async function createAccount(data) {
       trailing_stop,
       trailing_stop_percent,
       position_size_percent,
-      required_convergence
+      required_convergence,
+      timeframe
     ]);
 
     return result.rows[0];

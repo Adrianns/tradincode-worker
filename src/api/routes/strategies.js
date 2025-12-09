@@ -1,10 +1,10 @@
 /**
  * Strategies API Routes
- * Get available trading strategies
+ * Get available trading strategies and timeframes
  */
 
 import express from 'express';
-import { getAvailableStrategies } from '../../strategy-factory.js';
+import { getAvailableStrategies, getAvailableTimeframes } from '../../strategy-factory.js';
 
 const router = express.Router();
 
@@ -15,6 +15,17 @@ router.get('/', async (req, res) => {
     res.json(strategies);
   } catch (error) {
     console.error('Error getting strategies:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/strategies/timeframes - List available timeframes
+router.get('/timeframes', async (req, res) => {
+  try {
+    const timeframes = getAvailableTimeframes();
+    res.json(timeframes);
+  } catch (error) {
+    console.error('Error getting timeframes:', error);
     res.status(500).json({ error: error.message });
   }
 });

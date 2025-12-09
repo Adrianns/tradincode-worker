@@ -93,3 +93,16 @@ export function getAvailableStrategies() {
     }
   ];
 }
+
+/**
+ * Get list of available timeframes
+ */
+export function getAvailableTimeframes() {
+  return [
+    { value: '15m', label: '15 Minutes', description: 'Very short-term (high frequency)' },
+    { value: '1h', label: '1 Hour', description: 'Short-term intraday' },
+    { value: '4h', label: '4 Hours', description: 'Medium-term intraday' },
+    { value: '1d', label: '1 Day', description: 'Daily (default)' },
+    { value: '1w', label: '1 Week', description: 'Weekly (swing trading)' }
+  ];
+}

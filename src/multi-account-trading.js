@@ -13,11 +13,13 @@ import {
 import { createStrategy } from './strategy-factory.js';
 import { calculateAllSignals } from './indicators/index.js';
 import { initDatabase } from './database.js';
+import { getKlines, getCurrentPrice } from './binance.js';
 
 const pool = initDatabase();
 
 /**
  * Execute trading for all active accounts in parallel
+ * Each account can operate on its own timeframe
  */
 export async function executeMultiAccountTrading(marketData) {
   console.log('\n💼 Executing multi-account paper trading...');
@@ -33,37 +35,62 @@ export async function executeMultiAccountTrading(marketData) {
 
     console.log(`Found ${accounts.length} active account(s)`);
 
-    // Calculate all indicator signals once
-    const candles = marketData.dailyKlines.map(k => ({
-      timestamp: k.openTime,
-      open: k.open,
-      high: k.high,
-      low: k.low,
-      close: k.close,
-      volume: k.volume
-    }));
+    // Group accounts by timeframe to optimize data fetching
+    const accountsByTimeframe = {};
+    for (const account of accounts) {
+      const tf = account.timeframe || '1d';
+      if (!accountsByTimeframe[tf]) {
+        accountsByTimeframe[tf] = [];
+      }
+      accountsByTimeframe[tf].push(account);
+    }
 
-    console.log('Calculating all indicator signals...');
-    const allIndicatorSignals = await calculateAllSignals(candles, {
-      useHeikinAshi: true,
-      useTLSignals: true,
-      useKoncorde: true,
-      useLupown: true,
-      useWhaleDetector: true,
-      useDivergences: true,
-      useOrderBlocks: true
-    });
-    console.log('✓ Indicator signals calculated');
+    console.log(`Accounts grouped by timeframe: ${Object.keys(accountsByTimeframe).join(', ')}`);
+
+    // Fetch market data and calculate signals for each timeframe
+    const signalsByTimeframe = {};
+    for (const [timeframe, tfAccounts] of Object.entries(accountsByTimeframe)) {
+      console.log(`\nFetching ${timeframe} candles for ${tfAccounts.length} account(s)...`);
+
+      // Fetch candles for this timeframe
+      const klines = await getKlines(timeframe, 500);
+      const candles = klines.map(k => ({
+        timestamp: k.timestamp,
+        open: k.open,
+        high: k.high,
+        low: k.low,
+        close: k.close,
+        volume: k.volume
+      }));
+
+      console.log(`Calculating signals for ${timeframe}...`);
+      signalsByTimeframe[timeframe] = await calculateAllSignals(candles, {
+        useHeikinAshi: true,
+        useTLSignals: true,
+        useKoncorde: true,
+        useLupown: true,
+        useWhaleDetector: true,
+        useDivergences: true,
+        useOrderBlocks: true
+      });
+      console.log(`✓ Signals calculated for ${timeframe}`);
+    }
+
+    // Get current price
+    const currentPrice = await getCurrentPrice();
 
     // Execute each account in parallel
     const results = await Promise.all(
       accounts.map(account =>
-        executeAccountTrading(account, marketData, allIndicatorSignals)
+        executeAccountTrading(
+          account,
+          { currentPrice },
+          signalsByTimeframe[account.timeframe || '1d']
+        )
       )
     );
 
     // Save snapshots for all accounts
-    const currentPrice = marketData.currentPrice;
     console.log('\nSaving account snapshots...');
     await Promise.all(
       accounts.map(account =>
